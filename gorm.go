@@ -25,7 +25,6 @@ type GormConnectionParams struct {
 
 type GormConfigParams struct {
 	*gorm.Config
-	Logger   *zap.Logger
 	LogLevel string
 }
 
@@ -49,27 +48,52 @@ const (
 func NewGorm(params GormConnectionParams, configParams ...*GormConfigParams) (*gorm.DB, error) {
 	config := &gorm.Config{}
 	if len(configParams) > 0 && configParams[0] != nil {
-		configParam := configParams[0]
-		if configParam.Config != nil {
-			config = configParam.Config
+		param := configParams[0]
+		if param.Config != nil {
+			config = configParams[0].Config
 		}
-		if configParam.Logger != nil {
-			config.Logger = NewZapGormLogger(configParam.Logger, configParam.LogLevel)
+		if param.LogLevel != "" && param.Logger != nil {
+			level := convertGormLogLevel(configParams[0].LogLevel)
+			config.Logger = param.Logger.LogMode(level)
 		}
 	}
 
 	switch params.Driver {
 	case GORM_DRIVER_MYSQL:
-		return gorm.Open(NewGormMysql(params))
+		return gorm.Open(NewGormMysql(params), config)
 	case GORM_DRIVER_PG, GORM_DRIVER_PG_SHORTEN:
-		return gorm.Open(NewGormPostgres(params))
+		return gorm.Open(NewGormPostgres(params), config)
 	case GORM_DRIVER_SQLITE:
-		return gorm.Open(NewGormSQLite(params))
+		return gorm.Open(NewGormSQLite(params), config)
 	case GORM_DRIVER_SQLSERVER:
-		return gorm.Open(NewGormSQLServer(params))
+		return gorm.Open(NewGormSQLServer(params), config)
 	default:
 		return nil, fmt.Errorf("unsupported gorm driver: %s", params.Driver)
 	}
+}
+
+func NewGormWithLogger(params GormConnectionParams, zl *zap.Logger, configParams ...*GormConfigParams) (*gorm.DB, error) {
+	config := &gorm.Config{}
+	var logLevel string
+	if len(configParams) > 0 && configParams[0] != nil {
+		param := configParams[0]
+		if param.Config != nil {
+			config = param.Config
+		}
+		if param.LogLevel != "" {
+			logLevel = param.LogLevel
+		} else {
+			logLevel = LOG_LEVEL_ERROR
+		}
+	}
+	var gormLogger logger.Interface
+	if zl != nil {
+		gormLogger = NewZapGormLogger(zl.With(zap.String("Database", params.Database)), logLevel)
+	} else {
+		return nil, ERR_LOGGER_NOT_INIT
+	}
+	config.Logger = gormLogger
+	return NewGorm(params, &GormConfigParams{Config: config, LogLevel: logLevel})
 }
 
 func DefaultGorm() (*gorm.DB, error) {
@@ -115,9 +139,9 @@ func NewZapGormLogger(zl *zap.Logger, logLevel string) *ZapGormLogger {
 		SlowThreshold:             200 * time.Millisecond,
 		SkipCallerLookup:          true,
 		IgnoreRecordNotFoundError: true,
-		TraceWarnStr:              "gorm: warning",
-		TraceErrStr:               "gorm: error",
-		TraceStr:                  "gorm: info",
+		TraceWarnStr:              "[gorm: warning]",
+		TraceErrStr:               "[gorm: error]",
+		TraceStr:                  "[gorm: info]",
 	}
 }
 

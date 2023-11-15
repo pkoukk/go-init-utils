@@ -1,6 +1,8 @@
 package giu
 
 import (
+	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"os"
@@ -19,6 +21,10 @@ type LoggerParams struct {
 	Compress  bool   // compress
 	Tag       string // log tag
 }
+
+var (
+	ERR_LOGGER_NOT_INIT = errors.New("logger is nil, please init logger first")
+)
 
 const (
 	LOG_LEVEL_DEBUG  = "debug"
@@ -85,6 +91,16 @@ func newZapCore(fileName string, level string, maxSize int, maxBackups int, maxA
 		syncer,
 		atomicLevel,
 	)
+}
+
+type ZapLogger struct {
+	*zap.Logger
+}
+
+func (zl *ZapLogger) Printf(ctx context.Context, format string, v ...interface{}) {
+	if zl.Logger != nil {
+		zl.Logger.Sugar().Infof(format, v...)
+	}
 }
 
 func convertZapLevel(logLevel string) zapcore.Level {
